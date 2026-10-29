@@ -2,6 +2,8 @@
 # (the main branch of github.com/musical-pianist/coe5se-mods-suite) on Windows.
 # Run it in PowerShell with:
 #   irm https://raw.githubusercontent.com/musical-pianist/coe5se-installer/main/install.ps1 | iex
+# or, for CoE5SE alone:
+#   $env:COE5SE_ONLY=1; irm https://raw.githubusercontent.com/musical-pianist/coe5se-installer/main/install.ps1 | iex
 # It puts each mod folder in %APPDATA%\coe5\mods (replacing an older copy) and
 # glu32.dll in the game folder, next to CoE5.exe. It changes nothing else.
 # Everything runs in one script block, so an error never closes the window.
@@ -15,6 +17,7 @@
   $modsDir = if ($env:COE5_MODS_DIR) { $env:COE5_MODS_DIR } else { Join-Path $env:APPDATA 'coe5\mods' }
   $appId = '1606340'
   $mods = @('JazzyGamePresets', 'JazzyHotkeys', 'JazzyRestart', 'JazzyUITweaks', 'JazzyCheats')
+  if ($env:COE5SE_ONLY) { $mods = @() }
 
   # Each Steam library holds the game if it has the game's app manifest.
   function Find-GameDir {
@@ -49,7 +52,7 @@
     $running = Get-Process -Name CoE5 -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $gameExe }
     if ($running) { throw 'Conquest of Elysium 5 is running. Close the game, then paste the command again.' }
 
-    Write-Host 'Downloading CoE5SE and the mods...'
+    Write-Host $(if ($mods.Count) { 'Downloading CoE5SE and the mods...' } else { 'Downloading CoE5SE...' })
     New-Item -ItemType Directory -Path $workDir | Out-Null
     try {
       $coreUrl = if ($env:COE5SE_ZIP_URL) { $env:COE5SE_ZIP_URL } else {
@@ -58,20 +61,22 @@
       }
       if (-not $coreUrl) { throw 'no zip' }
       Invoke-WebRequest -Uri $coreUrl -OutFile (Join-Path $workDir 'coe5se.zip') -UseBasicParsing
-      Invoke-WebRequest -Uri $archiveUrl -OutFile (Join-Path $workDir 'suite.zip') -UseBasicParsing
+      if ($mods.Count) { Invoke-WebRequest -Uri $archiveUrl -OutFile (Join-Path $workDir 'suite.zip') -UseBasicParsing }
     } catch {
       throw 'the download failed. Check your internet connection and try again.'
     }
     try {
       Expand-Archive -Path (Join-Path $workDir 'coe5se.zip') -DestinationPath (Join-Path $workDir 'coe5se')
-      Expand-Archive -Path (Join-Path $workDir 'suite.zip') -DestinationPath (Join-Path $workDir 'suite')
+      if ($mods.Count) { Expand-Archive -Path (Join-Path $workDir 'suite.zip') -DestinationPath (Join-Path $workDir 'suite') }
     } catch {
       throw 'the download was damaged. Try again.'
     }
     # CoE5SE's zip holds its CoE5SE folder; the suite's archive holds one folder with every Jazzy mod in it.
-    $suiteDir = (Get-ChildItem -Directory (Join-Path $workDir 'suite') | Select-Object -First 1).FullName
     $sources = [ordered]@{ 'CoE5SE' = Join-Path $workDir 'coe5se\CoE5SE' }
-    foreach ($mod in $mods) { $sources[$mod] = Join-Path $suiteDir $mod }
+    if ($mods.Count) {
+      $suiteDir = (Get-ChildItem -Directory (Join-Path $workDir 'suite') | Select-Object -First 1).FullName
+      foreach ($mod in $mods) { $sources[$mod] = Join-Path $suiteDir $mod }
+    }
     foreach ($mod in $sources.Keys) {
       if (-not (Test-Path (Join-Path $sources[$mod] "$mod.c5m"))) { throw "the download has no $mod folder. Try again later." }
     }
@@ -99,7 +104,7 @@
 
     Write-Host ''
     Write-Host 'Done. Start the game. The first time, CoE5SE turns itself on and tells you so.'
-    Write-Host 'Turn on the Jazzy mods you want on the Mods screen.'
+    if ($mods.Count) { Write-Host 'Turn on the Jazzy mods you want on the Mods screen.' }
   } catch {
     Write-Host "Install stopped: $($_.Exception.Message)" -ForegroundColor Red
   } finally {
