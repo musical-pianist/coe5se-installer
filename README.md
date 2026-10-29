@@ -20,4 +20,4 @@ Then start the game. The first time, CoE5SE turns itself on and tells you so. Tu
 
 You can read both scripts before running them: [install.ps1](install.ps1), [install.sh](install.sh).
 
-The scripts take CoE5SE from [its latest release](https://github.com/musical-pianist/coe5se/releases/latest) and the Jazzy mods from [the mods' repository](https://github.com/musical-pianist/coe5se-mods-suite). To install by hand instead, follow [Install by Hand](https://github.com/musical-pianist/coe5se#install-by-hand).
+The scripts take CoE5SE from [its latest release](https://github.com/musical-pianist/coe5se/releases/latest) and the Jazzy mods from [the mods' repository](https://github.com/musical-pianist/coe5se-mods-suite). To install by hand instead, follow [Install](https://github.com/musical-pianist/coe5se#install).
