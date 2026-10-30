@@ -1,11 +1,10 @@
-# Installs CoE5SE (its latest release, from github.com/musical-pianist/coe5se) and the Jazzy mods
-# (the main branch of github.com/musical-pianist/coe5se-mods-suite) on Windows.
+# Installs CoE5SE (its latest release, from github.com/musical-pianist/coe5se), the Jazzy mods
+# (the main branch of github.com/musical-pianist/coe5se-mods-suite), or both, on Windows. It asks which.
 # Run it in PowerShell with:
 #   irm https://raw.githubusercontent.com/musical-pianist/coe5se-installer/main/install.ps1 | iex
-# or, for CoE5SE alone:
-#   $env:COE5SE_ONLY=1; irm https://raw.githubusercontent.com/musical-pianist/coe5se-installer/main/install.ps1 | iex
-# It puts each mod folder in %APPDATA%\coe5\mods (replacing an older copy) and
+# It puts each mod folder in %APPDATA%\coe5\mods (replacing an older copy) and, with CoE5SE,
 # glu32.dll in the game folder, next to CoE5.exe. It changes nothing else.
+# $env:COE5_INSTALL_CHOICE = 1, 2 or 3 answers the question without asking (tests).
 # Everything runs in one script block, so an error never closes the window.
 & {
   $ErrorActionPreference = 'Stop'
@@ -16,8 +15,7 @@
   $latestUrl = 'https://api.github.com/repos/musical-pianist/coe5se/releases/latest'
   $modsDir = if ($env:COE5_MODS_DIR) { $env:COE5_MODS_DIR } else { Join-Path $env:APPDATA 'coe5\mods' }
   $appId = '1606340'
-  $mods = @('JazzyGamePresets', 'JazzyHotkeys', 'JazzyRestart', 'JazzyUITweaks', 'JazzyCheats')
-  if ($env:COE5SE_ONLY) { $mods = @() }
+  $allMods = @('JazzyGamePresets', 'JazzyHotkeys', 'JazzyRestart', 'JazzyUITweaks', 'JazzyCheats')
 
   # Each Steam library holds the game if it has the game's app manifest.
   function Find-GameDir {
@@ -52,27 +50,41 @@
     $running = Get-Process -Name CoE5 -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $gameExe }
     if ($running) { throw 'Conquest of Elysium 5 is running. Close the game, then paste the command again.' }
 
-    Write-Host $(if ($mods.Count) { 'Downloading CoE5SE and the mods...' } else { 'Downloading CoE5SE...' })
+    $choice = $env:COE5_INSTALL_CHOICE
+    while ($choice -notin @('1', '2', '3')) {
+      Write-Host 'What do you want to install?'
+      Write-Host '  1) Script Extender and all mods'
+      Write-Host '  2) Script Extender only'
+      Write-Host '  3) Mods only'
+      $choice = (Read-Host 'Type 1, 2 or 3, then press Enter').Trim()
+    }
+    $withCore = $choice -ne '3'
+    $mods = if ($choice -eq '2') { @() } else { $allMods }
+
+    Write-Host 'Downloading...'
     New-Item -ItemType Directory -Path $workDir | Out-Null
     try {
-      $coreUrl = if ($env:COE5SE_ZIP_URL) { $env:COE5SE_ZIP_URL } else {
-        $latest = Invoke-RestMethod -Uri $latestUrl -UseBasicParsing
-        ($latest.assets | Where-Object { $_.name -like 'CoE5SE-*.zip' } | Select-Object -First 1).browser_download_url
+      if ($withCore) {
+        $coreUrl = if ($env:COE5SE_ZIP_URL) { $env:COE5SE_ZIP_URL } else {
+          $latest = Invoke-RestMethod -Uri $latestUrl -UseBasicParsing
+          ($latest.assets | Where-Object { $_.name -like 'CoE5SE-*.zip' } | Select-Object -First 1).browser_download_url
+        }
+        if (-not $coreUrl) { throw 'no zip' }
+        Invoke-WebRequest -Uri $coreUrl -OutFile (Join-Path $workDir 'coe5se.zip') -UseBasicParsing
       }
-      if (-not $coreUrl) { throw 'no zip' }
-      Invoke-WebRequest -Uri $coreUrl -OutFile (Join-Path $workDir 'coe5se.zip') -UseBasicParsing
       if ($mods.Count) { Invoke-WebRequest -Uri $archiveUrl -OutFile (Join-Path $workDir 'suite.zip') -UseBasicParsing }
     } catch {
       throw 'the download failed. Check your internet connection and try again.'
     }
     try {
-      Expand-Archive -Path (Join-Path $workDir 'coe5se.zip') -DestinationPath (Join-Path $workDir 'coe5se')
+      if ($withCore) { Expand-Archive -Path (Join-Path $workDir 'coe5se.zip') -DestinationPath (Join-Path $workDir 'coe5se') }
       if ($mods.Count) { Expand-Archive -Path (Join-Path $workDir 'suite.zip') -DestinationPath (Join-Path $workDir 'suite') }
     } catch {
       throw 'the download was damaged. Try again.'
     }
     # CoE5SE's zip holds its CoE5SE folder; the suite's archive holds one folder with every Jazzy mod in it.
-    $sources = [ordered]@{ 'CoE5SE' = Join-Path $workDir 'coe5se\CoE5SE' }
+    $sources = [ordered]@{}
+    if ($withCore) { $sources['CoE5SE'] = Join-Path $workDir 'coe5se\CoE5SE' }
     if ($mods.Count) {
       $suiteDir = (Get-ChildItem -Directory (Join-Path $workDir 'suite') | Select-Object -First 1).FullName
       foreach ($mod in $mods) { $sources[$mod] = Join-Path $suiteDir $mod }
@@ -80,8 +92,10 @@
     foreach ($mod in $sources.Keys) {
       if (-not (Test-Path (Join-Path $sources[$mod] "$mod.c5m"))) { throw "the download has no $mod folder. Try again later." }
     }
-    $stub = Join-Path $sources['CoE5SE'] 'glu32.dll'
-    if (-not (Test-Path $stub)) { throw 'the download has no glu32.dll. Try again later.' }
+    if ($withCore) {
+      $stub = Join-Path $sources['CoE5SE'] 'glu32.dll'
+      if (-not (Test-Path $stub)) { throw 'the download has no glu32.dll. Try again later.' }
+    }
 
     New-Item -ItemType Directory -Path $modsDir -Force | Out-Null
     foreach ($mod in $sources.Keys) {
@@ -97,13 +111,15 @@
       Write-Host "Installed $mod in $target"
     }
 
-    $stubStaging = Join-Path $gameDir '.glu32.dll.installing'
-    Copy-Item $stub $stubStaging -Force
-    Move-Item $stubStaging (Join-Path $gameDir 'glu32.dll') -Force
-    Write-Host "Installed glu32.dll in $gameDir"
+    if ($withCore) {
+      $stubStaging = Join-Path $gameDir '.glu32.dll.installing'
+      Copy-Item $stub $stubStaging -Force
+      Move-Item $stubStaging (Join-Path $gameDir 'glu32.dll') -Force
+      Write-Host "Installed glu32.dll in $gameDir"
+    }
 
     Write-Host ''
-    Write-Host 'Done. Start the game. The first time, CoE5SE turns itself on and tells you so.'
+    if ($withCore) { Write-Host 'Done. Start the game. The first time, CoE5SE turns itself on and tells you so.' } else { Write-Host 'Done. Start the game.' }
     if ($mods.Count) { Write-Host 'Turn on the Jazzy mods you want on the Mods screen.' }
   } catch {
     Write-Host "Install stopped: $($_.Exception.Message)" -ForegroundColor Red
