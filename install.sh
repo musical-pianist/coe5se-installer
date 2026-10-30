@@ -5,7 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/musical-pianist/coe5se-installer/main/install.sh | bash
 # It puts each mod folder in ~/.coe5/mods (replacing an older copy) and, with CoE5SE,
 # coe5se.dylib in the game folder, next to coe5_mac. It changes nothing else.
-# COE5_INSTALL_CHOICE=1, 2 or 3 answers the question without asking (tests).
+# COE5_INSTALL_CHOICE=1, 2 or 3 answers the question without asking (tests, scripts).
 set -euo pipefail
 
 ARCHIVE_URL="${COE5_SUITE_ZIP_URL:-https://github.com/musical-pianist/coe5se-mods-suite/archive/refs/heads/main.zip}"
@@ -56,17 +56,54 @@ if ps -axo comm= | grep -Fx "$GAME_DIR/coe5_mac" >/dev/null; then
   fail "Conquest of Elysium 5 is running. Quit the game, then paste the command again."
 fi
 
-# The script itself arrives on standard input (curl | bash), so the answer is read from the terminal.
-CHOICE="${COE5_INSTALL_CHOICE:-}"
-while [[ "$CHOICE" != 1 && "$CHOICE" != 2 && "$CHOICE" != 3 ]]; do
+OPTIONS=("Script Extender and all mods" "Script Extender only" "Mods only")
+
+# An arrow-key menu on the terminal. The script itself arrives on standard input (curl | bash), so the keys
+# are read from /dev/tty. 1, 2 or 3 picks directly. It sets CHOICE to 1, 2 or 3.
+pickChoice() {
+  local selected=0 key rest i on="" off=""
+  exec 3</dev/tty 2>/dev/null || fail "this needs a terminal to ask what to install. Paste the command into Terminal."
+  if [[ -z "${NO_COLOR:-}" && "${TERM:-}" != dumb ]]; then on=$'\033[1;36m'; off=$'\033[0m'; fi
+  # Keys pressed while the menu redraws are never echoed; the terminal is put back however the script ends.
+  local saved
+  saved=$(stty -g <&3)
+  stty -echo <&3
+  trap 'stty "$saved" </dev/tty 2>/dev/null; printf "\033[?25h"' EXIT
+  printf '\033[?25l'
   echo "What do you want to install?"
-  echo "  1) Script Extender and all mods"
-  echo "  2) Script Extender only"
-  echo "  3) Mods only"
-  printf "Type 1, 2 or 3, then press Return: "
-  read -r CHOICE < /dev/tty || fail "no answer. Paste the command into Terminal again."
-  [[ "$CHOICE" = 1 || "$CHOICE" = 2 || "$CHOICE" = 3 ]] || echo "That's not 1, 2 or 3."
-done
+  echo
+  while true; do
+    for i in 0 1 2; do
+      if [[ $i -eq $selected ]]; then printf '\r\033[K%s> %s%s\n' "$on" "${OPTIONS[$i]}" "$off"
+      else printf '\r\033[K  %s\n' "${OPTIONS[$i]}"; fi
+    done
+    printf '\n\033[KUp and Down to move, Enter to pick, Ctrl-C to quit'
+    IFS= read -rsn1 key <&3 || fail "no answer. Paste the command into Terminal again."
+    case "$key" in
+      $'\033') IFS= read -rsn2 -t 1 rest <&3 || rest=""
+               [[ "$rest" = "[A" && $selected -gt 0 ]] && selected=$((selected - 1))
+               [[ "$rest" = "[B" && $selected -lt 2 ]] && selected=$((selected + 1)) ;;
+      [123]) selected=$((key - 1)); break ;;
+      "") break ;;
+    esac
+    printf '\r\033[4A'
+  done
+  printf '\r\033[4A'
+  for i in 0 1 2; do
+    if [[ $i -eq $selected ]]; then printf '\r\033[K%s> %s%s\n' "$on" "${OPTIONS[$i]}" "$off"; else printf '\r\033[K  %s\n' "${OPTIONS[$i]}"; fi
+  done
+  printf '\r\033[K\n\r\033[K\033[?25h'
+  stty "$saved" <&3
+  exec 3<&-
+  CHOICE=$((selected + 1))
+}
+
+CHOICE="${COE5_INSTALL_CHOICE:-}"
+case "$CHOICE" in
+  1|2|3) ;;
+  "") pickChoice ;;
+  *) fail "COE5_INSTALL_CHOICE must be 1, 2 or 3." ;;
+esac
 WITH_CORE=yes
 MODS=("${ALL_MODS[@]}")
 [[ "$CHOICE" = 2 ]] && MODS=()

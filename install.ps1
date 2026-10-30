@@ -39,6 +39,57 @@
     return $null
   }
 
+  # An arrow-key menu; 1, 2 or 3 picks directly. Without a console to read keys from (input redirected),
+  # it asks for the number instead. Returns '1', '2' or '3'.
+  function Select-Choice {
+    $options = @('Script Extender and all mods', 'Script Extender only', 'Mods only')
+    Write-Host 'What do you want to install?'
+    Write-Host ''
+    if ([Console]::IsInputRedirected) {
+      for ($i = 0; $i -lt 3; $i++) { Write-Host "  $($i + 1)) $($options[$i])" }
+      while ($true) {
+        $answer = (Read-Host 'Type 1, 2 or 3, then press Enter').Trim()
+        if ($answer -in @('1', '2', '3')) { return $answer }
+        Write-Host "That's not 1, 2 or 3."
+      }
+    }
+    $color = -not $env:NO_COLOR
+    foreach ($o in $options) { Write-Host "  $o" }
+    Write-Host ''
+    Write-Host 'Up and Down to move, Enter to pick, Ctrl-C to quit'
+    $top = [Console]::CursorTop - 5
+    $width = [Math]::Max([Console]::WindowWidth - 1, 40)
+    $selected = 0
+    $cursor = [Console]::CursorVisible
+    try {
+      [Console]::CursorVisible = $false
+      while ($true) {
+        for ($i = 0; $i -lt 3; $i++) {
+          [Console]::SetCursorPosition(0, $top + $i)
+          if ($i -eq $selected) {
+            if ($color) { Write-Host ("> " + $options[$i]).PadRight($width) -ForegroundColor Cyan -NoNewline } else { Write-Host ("> " + $options[$i]).PadRight($width) -NoNewline }
+          } else { Write-Host ("  " + $options[$i]).PadRight($width) -NoNewline }
+        }
+        $key = [Console]::ReadKey($true)
+        if ($key.Key -eq 'UpArrow' -and $selected -gt 0) { $selected-- }
+        elseif ($key.Key -eq 'DownArrow' -and $selected -lt 2) { $selected++ }
+        elseif ($key.Key -eq 'Enter') { break }
+        elseif ($key.KeyChar -in @('1', '2', '3')) { $selected = [int]"$($key.KeyChar)" - 1; break }
+      }
+      for ($i = 0; $i -lt 3; $i++) {
+        [Console]::SetCursorPosition(0, $top + $i)
+        if ($i -eq $selected) { Write-Host ("> " + $options[$i]).PadRight($width) -NoNewline } else { Write-Host ("  " + $options[$i]).PadRight($width) -NoNewline }
+      }
+      # The hint line goes; what the script prints next starts there.
+      [Console]::SetCursorPosition(0, $top + 4)
+      Write-Host (' ' * $width) -NoNewline
+      [Console]::SetCursorPosition(0, $top + 4)
+    } finally {
+      [Console]::CursorVisible = $cursor
+    }
+    return [string]($selected + 1)
+  }
+
   $workDir = Join-Path $env:TEMP ('coe5se_install_' + [guid]::NewGuid().ToString('N'))
   try {
     $gameDir = if ($env:COE5_GAME_DIR) { $env:COE5_GAME_DIR } else { Find-GameDir }
@@ -51,14 +102,8 @@
     if ($running) { throw 'Conquest of Elysium 5 is running. Close the game, then paste the command again.' }
 
     $choice = $env:COE5_INSTALL_CHOICE
-    while ($choice -notin @('1', '2', '3')) {
-      Write-Host 'What do you want to install?'
-      Write-Host '  1) Script Extender and all mods'
-      Write-Host '  2) Script Extender only'
-      Write-Host '  3) Mods only'
-      $choice = (Read-Host 'Type 1, 2 or 3, then press Enter').Trim()
-      if ($choice -notin @('1', '2', '3')) { Write-Host "That's not 1, 2 or 3." }
-    }
+    if (-not $choice) { $choice = Select-Choice }
+    if ($choice -notin @('1', '2', '3')) { throw 'COE5_INSTALL_CHOICE must be 1, 2 or 3.' }
     $withCore = $choice -ne '3'
     $mods = if ($choice -eq '2') { @() } else { $allMods }
 
