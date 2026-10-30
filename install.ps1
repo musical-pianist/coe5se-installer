@@ -57,6 +57,7 @@
       Write-Host '  2) Script Extender only'
       Write-Host '  3) Mods only'
       $choice = (Read-Host 'Type 1, 2 or 3, then press Enter').Trim()
+      if ($choice -notin @('1', '2', '3')) { Write-Host "That's not 1, 2 or 3." }
     }
     $withCore = $choice -ne '3'
     $mods = if ($choice -eq '2') { @() } else { $allMods }
@@ -69,11 +70,12 @@
           $latest = Invoke-RestMethod -Uri $latestUrl -UseBasicParsing
           ($latest.assets | Where-Object { $_.name -like 'CoE5SE-*.zip' } | Select-Object -First 1).browser_download_url
         }
-        if (-not $coreUrl) { throw 'no zip' }
+        if (-not $coreUrl) { throw "couldn't find CoE5SE's latest release. Check your internet connection and try again." }
         Invoke-WebRequest -Uri $coreUrl -OutFile (Join-Path $workDir 'coe5se.zip') -UseBasicParsing
       }
       if ($mods.Count) { Invoke-WebRequest -Uri $archiveUrl -OutFile (Join-Path $workDir 'suite.zip') -UseBasicParsing }
     } catch {
+      if ($_.Exception.Message -like "couldn't find*") { throw }
       throw 'the download failed. Check your internet connection and try again.'
     }
     try {
@@ -97,32 +99,46 @@
       if (-not (Test-Path $stub)) { throw 'the download has no glu32.dll. Try again later.' }
     }
 
-    New-Item -ItemType Directory -Path $modsDir -Force | Out-Null
+    try { New-Item -ItemType Directory -Path $modsDir -Force | Out-Null } catch { throw "couldn't create the mods folder $modsDir." }
     foreach ($mod in $sources.Keys) {
       # Copy next to the old folder first, so a failed copy leaves the old one in place.
       $target = Join-Path $modsDir $mod
       $staging = Join-Path $modsDir ".$mod.installing"
-      if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
-      Copy-Item -Recurse $sources[$mod] $staging
+      try {
+        if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
+        Copy-Item -Recurse $sources[$mod] $staging
+      } catch { throw "couldn't copy $mod into $modsDir. Is the disk full?" }
       # Each folder's README.md is for the repo's page; the game never reads it.
       Remove-Item (Join-Path $staging 'README.md') -Force -ErrorAction SilentlyContinue
-      if (Test-Path $target) { Remove-Item -Recurse -Force $target }
-      Rename-Item $staging $mod
+      try {
+        if (Test-Path $target) { Remove-Item -Recurse -Force $target }
+        Rename-Item $staging $mod
+      } catch { throw "couldn't replace the old $mod folder in $modsDir. Close any window showing it and try again." }
       Write-Host "Installed $mod in $target"
     }
 
     if ($withCore) {
       $stubStaging = Join-Path $gameDir '.glu32.dll.installing'
-      Copy-Item $stub $stubStaging -Force
-      Move-Item $stubStaging (Join-Path $gameDir 'glu32.dll') -Force
+      try {
+        Copy-Item $stub $stubStaging -Force
+        Move-Item $stubStaging (Join-Path $gameDir 'glu32.dll') -Force
+      } catch { throw "couldn't copy glu32.dll into the game folder $gameDir. Close the game and try again." }
       Write-Host "Installed glu32.dll in $gameDir"
     }
 
     Write-Host ''
-    if ($withCore) { Write-Host 'Done. Start the game. The first time, CoE5SE turns itself on and tells you so.' } else { Write-Host 'Done. Start the game.' }
+    if ($withCore) { Write-Host 'Done. Start the game. The first time, CoE5SE turns itself on and tells you so.' } else {
+      if (-not (Test-Path (Join-Path $modsDir 'CoE5SE\CoE5SE.c5m'))) { Write-Host 'These mods need CoE5SE. Run the command again and pick 2 to install it.' }
+      Write-Host 'Done. Start the game.'
+    }
     if ($mods.Count) { Write-Host 'Turn on the Jazzy mods you want on the Mods screen.' }
   } catch {
-    Write-Host "Install stopped: $($_.Exception.Message)" -ForegroundColor Red
+    # Every message thrown above is a plain sentence; anything else is unexpected.
+    $message = $_.Exception.Message
+    if ($_.FullyQualifiedErrorId -ne $message) {
+      $message = 'something unexpected went wrong. Nothing more was changed. Try again, or report it on github.com/musical-pianist/coe5se-installer.'
+    }
+    Write-Host "Install stopped: $message" -ForegroundColor Red
   } finally {
     if (Test-Path $workDir) { Remove-Item -Recurse -Force $workDir -ErrorAction SilentlyContinue }
   }

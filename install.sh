@@ -20,6 +20,8 @@ fail() {
   echo "Install stopped: $1" >&2
   exit 1
 }
+# Anything not caught below still ends with one plain line.
+trap 'fail "something unexpected went wrong. Nothing more was changed. Try again, or report it on github.com/musical-pianist/coe5se-installer."' ERR
 
 # Each Steam library holds the game if it has the game's app manifest.
 findGameDir() {
@@ -63,6 +65,7 @@ while [[ "$CHOICE" != 1 && "$CHOICE" != 2 && "$CHOICE" != 3 ]]; do
   echo "  3) Mods only"
   printf "Type 1, 2 or 3, then press Return: "
   read -r CHOICE < /dev/tty || fail "no answer. Paste the command into Terminal again."
+  [[ "$CHOICE" = 1 || "$CHOICE" = 2 || "$CHOICE" = 3 ]] || echo "That's not 1, 2 or 3."
 done
 WITH_CORE=yes
 MODS=("${ALL_MODS[@]}")
@@ -79,17 +82,17 @@ echo "Downloading..."
 if [[ -n "$WITH_CORE" ]]; then
   CORE_URL="${COE5SE_ZIP_URL:-}"
   if [[ -z "$CORE_URL" ]]; then
-    CORE_URL=$(curl -fsSL "$LATEST_URL" | grep -o '"browser_download_url": *"[^"]*/CoE5SE-[^"]*\.zip"' | head -1 | sed 's/.*"\(https[^"]*\)"$/\1/') || true
+    CORE_URL=$(curl -fsL "$LATEST_URL" | grep -o '"browser_download_url": *"[^"]*/CoE5SE-[^"]*\.zip"' | head -1 | sed 's/.*"\(https[^"]*\)"$/\1/') || true
   fi
-  [[ -n "$CORE_URL" ]] || fail "the download failed. Check your internet connection and try again."
-  curl -fsSL -o "$WORK_DIR/coe5se.zip" "$CORE_URL" || fail "the download failed. Check your internet connection and try again."
+  [[ -n "$CORE_URL" ]] || fail "couldn't find CoE5SE's latest release. Check your internet connection and try again."
+  curl -fsL -o "$WORK_DIR/coe5se.zip" "$CORE_URL" || fail "the download failed. Check your internet connection and try again."
   unzip -q "$WORK_DIR/coe5se.zip" -d "$WORK_DIR/coe5se" || fail "the download was damaged. Try again."
   [[ -f "$WORK_DIR/coe5se/CoE5SE/coe5se.dylib" ]] || fail "the download has no coe5se.dylib. Try again later."
 fi
 # CoE5SE's zip holds its CoE5SE folder; the suite's archive holds one folder with every Jazzy mod in it.
 SUITE_DIR=""
 if [[ ${#MODS[@]} -gt 0 ]]; then
-  curl -fsSL -o "$WORK_DIR/suite.zip" "$ARCHIVE_URL" || fail "the download failed. Check your internet connection and try again."
+  curl -fsL -o "$WORK_DIR/suite.zip" "$ARCHIVE_URL" || fail "the download failed. Check your internet connection and try again."
   unzip -q "$WORK_DIR/suite.zip" -d "$WORK_DIR/suite" || fail "the download was damaged. Try again."
   SUITE_DIR=$(find "$WORK_DIR/suite" -mindepth 1 -maxdepth 1 -type d -print -quit)
 fi
@@ -100,21 +103,22 @@ for mod in "${INSTALL[@]}"; do
   [[ -f "$(sourceOf "$mod")/$mod.c5m" ]] || fail "the download has no $mod folder. Try again later."
 done
 
-mkdir -p "$MODS_DIR"
+mkdir -p "$MODS_DIR" 2>/dev/null || fail "couldn't create the mods folder $MODS_DIR."
 for mod in "${INSTALL[@]}"; do
   # Copy next to the old folder first, so a failed copy leaves the old one in place.
   rm -rf -- "$MODS_DIR/.$mod.installing"
-  cp -R "$(sourceOf "$mod")" "$MODS_DIR/.$mod.installing"
+  cp -R "$(sourceOf "$mod")" "$MODS_DIR/.$mod.installing" 2>/dev/null || fail "couldn't copy $mod into $MODS_DIR. Is the disk full?"
   # Each folder's README.md is for the repo's page; the game never reads it.
   rm -f -- "$MODS_DIR/.$mod.installing/README.md"
-  rm -rf -- "${MODS_DIR:?}/$mod"
-  mv "$MODS_DIR/.$mod.installing" "$MODS_DIR/$mod"
+  rm -rf -- "${MODS_DIR:?}/$mod" 2>/dev/null || fail "couldn't replace the old $mod folder in $MODS_DIR."
+  mv "$MODS_DIR/.$mod.installing" "$MODS_DIR/$mod" || fail "couldn't replace the old $mod folder in $MODS_DIR."
   echo "Installed $mod in $MODS_DIR/$mod"
 done
 
 if [[ -n "$WITH_CORE" ]]; then
-  cp "$WORK_DIR/coe5se/CoE5SE/coe5se.dylib" "$GAME_DIR/.coe5se.dylib.installing"
-  mv -f "$GAME_DIR/.coe5se.dylib.installing" "$GAME_DIR/coe5se.dylib"
+  { cp "$WORK_DIR/coe5se/CoE5SE/coe5se.dylib" "$GAME_DIR/.coe5se.dylib.installing" &&
+    mv -f "$GAME_DIR/.coe5se.dylib.installing" "$GAME_DIR/coe5se.dylib"; } 2>/dev/null ||
+    fail "couldn't copy coe5se.dylib into the game folder $GAME_DIR."
   echo "Installed coe5se.dylib in $GAME_DIR"
 
   echo
@@ -130,6 +134,7 @@ if [[ -n "$WITH_CORE" ]]; then
   echo "Then start the game. The first time, CoE5SE turns itself on and tells you so."
 else
   echo
+  [[ -f "$MODS_DIR/CoE5SE/CoE5SE.c5m" ]] || echo "These mods need CoE5SE. Run the command again and pick 2 to install it."
   echo "Then start the game."
 fi
 if [[ ${#MODS[@]} -gt 0 ]]; then echo "Turn on the Jazzy mods you want on the Mods screen."; fi
