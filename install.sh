@@ -157,21 +157,28 @@ if [[ -n "$WITH_CORE" ]]; then
     mv -f "$GAME_DIR/.coe5se.dylib.installing" "$GAME_DIR/coe5se.dylib"; } 2>/dev/null ||
     fail "couldn't copy coe5se.dylib into the game folder $GAME_DIR."
   echo "Installed coe5se.dylib in $GAME_DIR"
-
-  echo
-  if grep -Fqs 'DYLD_INSERT_LIBRARIES=coe5se.dylib' "$STEAM_DIR"/userdata/*/config/localconfig.vdf; then
-    echo "Steam's Launch Options for the game are already set."
-  else
-    echo "One step left. In Steam, click the gear on Conquest of Elysium 5's page,"
-    echo "then Properties, General, and set Launch Options to:"
-    echo
-    echo "  $LAUNCH_OPTIONS"
-  fi
-  echo
-  echo "Then start the game. The first time, CoE5SE turns itself on and tells you so."
-else
-  echo
-  [[ -f "$MODS_DIR/CoE5SE/CoE5SE.c5m" ]] || echo "These mods need CoE5SE. Run the command again and pick 2 to install it."
-  echo "Then start the game."
 fi
-if [[ ${#MODS[@]} -gt 0 ]]; then echo "Turn on the Jazzy mods you want on the Mods screen."; fi
+
+# The ending: what was installed is done; the steps left are numbered, the last one the player's.
+green="" reset=""
+if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != dumb ]]; then green=$'\033[1;32m'; reset=$'\033[0m'; fi
+echo
+echo "${green}Install finished!${reset}"
+echo
+step=1
+if [[ -n "$WITH_CORE" ]] && ! grep -Fqs 'DYLD_INSERT_LIBRARIES=coe5se.dylib' "$STEAM_DIR"/userdata/*/config/localconfig.vdf; then
+  echo "$step. If you haven't installed CoE5SE before: in Steam, click the gear on"
+  echo "   Conquest of Elysium 5's page, then Properties, General, and set Launch"
+  echo "   Options to:"
+  echo
+  echo "     $LAUNCH_OPTIONS"
+  echo
+  step=$((step + 1))
+fi
+if [[ -n "$WITH_CORE" ]]; then
+  echo "$step. Start the game. The first time, CoE5SE turns itself on and tells you so."
+else
+  echo "$step. Start the game."
+fi
+step=$((step + 1))
+if [[ ${#MODS[@]} -gt 0 ]]; then echo "$step. Turn on the mods you want on the Mods screen."; fi

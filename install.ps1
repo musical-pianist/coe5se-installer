@@ -171,12 +171,12 @@
       Write-Host "Installed glu32.dll in $gameDir"
     }
 
+    # The ending: what was installed is done; the steps left are numbered, the last one the player's.
     Write-Host ''
-    if ($withCore) { Write-Host 'Done. Start the game. The first time, CoE5SE turns itself on and tells you so.' } else {
-      if (-not (Test-Path (Join-Path $modsDir 'CoE5SE\CoE5SE.c5m'))) { Write-Host 'These mods need CoE5SE. Run the command again and pick 2 to install it.' }
-      Write-Host 'Done. Start the game.'
-    }
-    if ($mods.Count) { Write-Host 'Turn on the Jazzy mods you want on the Mods screen.' }
+    if ($env:NO_COLOR) { Write-Host 'Install finished!' } else { Write-Host 'Install finished!' -ForegroundColor Green }
+    Write-Host ''
+    if ($withCore) { Write-Host '1. Start the game. The first time, CoE5SE turns itself on and tells you so.' } else { Write-Host '1. Start the game.' }
+    if ($mods.Count) { Write-Host '2. Turn on the mods you want on the Mods screen.' }
   } catch {
     # Every message thrown above is a plain sentence; anything else is unexpected.
     $message = $_.Exception.Message
